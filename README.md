@@ -4,6 +4,7 @@
 ***Tested on Confluence server and Data Center 7.12***
 ***
 ### First Run:
+- Run ` pip install -r requirements.txt` to install dependencies
 - Run with `--init-db` to get all the live pages on the confluence server and handle pages with the same name
 
 ### Arguments:
