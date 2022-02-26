@@ -1,0 +1,10 @@
+{
+  "host": "http://localhost:8090/",
+  "username": "",
+  "password": "",
+  "space_key": "",
+  "path": "files_to_move",
+  "root_page_on_confluence": "",
+  "db": "db.json",
+  "limit": 25
+}
