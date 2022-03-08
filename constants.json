@@ -6,5 +6,6 @@
   "path": "files_to_move",
   "root_page_on_confluence": "",
   "db": "db.json",
+  "log_path": "log.log",
   "limit": 25
 }

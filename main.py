@@ -1,14 +1,33 @@
-from tinydb import TinyDB, Query
-import sys
 import getopt
-import os
-import requests
 import json
+import logging
+import os
+import sys
 
-attachment_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1\" ' \
-                  'ac:macro-id=\"b7348849-e03a-4bb9-a345-955883bb48cd\"><ac:parameter ac:name=\"name\">' \
-                  '<ri:attachment ri:filename=\"%s\" /></ac:parameter><ac:parameter ' \
-                  'ac:name=\"height\">250</ac:parameter></ac:structured-macro></p>'
+import filetype
+import requests
+from tinydb import TinyDB, Query
+
+file_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1\" ' \
+            'ac:macro-id=\"b7348849-e03a-4bb9-a345-955883bb48cd-ss\"><ac:parameter ac:name=\"name\">' \
+            '<ri:attachment ri:filename=\"%s\" /></ac:parameter><ac:parameter ' \
+            'ac:name=\"height\">250</ac:parameter></ac:structured-macro></p>'
+image_html = '<p><ac:image ac:height=\"250\"><ri:attachment ri:filename=\"%s\" /></ac:image></p>'
+link_html = '<ac:link><ri:attachment ri:filename=\"%s\" /></ac:link>'
+
+
+class CustomFormatter(logging.Formatter):
+    def __init__(self):
+        super(CustomFormatter, self).__init__()
+
+    def format(self, record: logging.LogRecord) -> str:
+        match record.levelno:
+            case logging.INFO:
+                self._style._fmt = "%(msg)s"
+            case logging.ERROR:
+                self._style._fmt = "ERROR - %(asctime)s - %(msg)s"
+
+        return super().format(record)
 
 
 def request_request(method, url, **additional_params):
@@ -17,18 +36,21 @@ def request_request(method, url, **additional_params):
         response.raise_for_status()
 
         return response.json()
-    except requests.exceptions.HTTPError as errh:
-        print(errh)
-    except requests.exceptions.ConnectionError as errc:
-        print(errc)
-    except requests.exceptions.Timeout as errt:
-        print(errt)
+    except requests.exceptions.HTTPError as err_h:
+        smart_logger.error(err_h)
+    except requests.exceptions.ConnectionError as err_c:
+        smart_logger.error(err_c)
+    except requests.exceptions.Timeout as err_t:
+        smart_logger.error(err_t)
     except requests.exceptions.RequestException as err:
-        print(err)
+        smart_logger.error(err)
 
 
 def init_db(start=0):
     global constants, auth_details, db
+
+    if constants['host'][-1] != '/':
+        constants['host'] += '/'
 
     url = constants['host'] + 'rest/api/content'
 
@@ -53,29 +75,46 @@ def init_db(start=0):
         init_db(start + response['size'])
 
 
+def init_logger():
+    global smart_logger, constants
+
+    smart_logger.setLevel(logging.INFO)
+    smart_formatter = CustomFormatter()
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(smart_formatter)
+
+    file_handler = logging.FileHandler(constants['log_path'])
+    file_handler.setFormatter(smart_formatter)
+
+    smart_logger.addHandler(console_handler)
+    smart_logger.addHandler(file_handler)
+
+
 def parse_args():
-    global db
+    global db, attachment_html
 
     try:
-        arguments, _ = getopt.getopt(sys.argv[1:], 'h', ['help', 'init-db', 'reinit-db'])
+        arguments, _ = getopt.getopt(sys.argv[1:], 'h', ['help', 'init-db', 'use-link'])
 
         for current_argument, _ in arguments:
-            if current_argument in ('-h', '--help'):
-                print('optional arguments:')
-                print('  --init-db\tto initialize the database.')
-                print('  --reinit-db\tto clear the database and re-initialize it.')
+            match current_argument:
+                case ('-h' | '--help'):
+                    print('optional arguments:')
+                    print('  --init-db\tto initialize the database.')
+                    print('  --use-link\tto post attachments as hyperlinks.')
 
-                sys.exit()
+                    sys.exit()
 
-            elif current_argument == '--init-db':
-                init_db()
+                case '--init-db':
+                    db.truncate()
+                    init_db()
 
-            elif current_argument == '--reinit-db':
-                db.truncate()
-                init_db()
+                case '--use-link':
+                    attachment_html = link_html
 
     except getopt.error as err:
-        print(str(err))
+        smart_logger.error(str(err))
         sys.exit()
 
 
@@ -174,15 +213,15 @@ def publish_page(title, ancestors_name=None, root_conf=False):
         }
     }
 
-    print(f'Publishing page: "{title}"', end=' ')
+    logger_prefix = f'Publishing page: "{title}"'
 
     if ancestors_name:
         payload['ancestors'] = [{'id': get_page_id(ancestors_name)}]
 
-        print(f'under ancestor: "{ancestors_name}"')
+        smart_logger.info(f'{logger_prefix} under ancestor: "{ancestors_name}"')
 
     else:
-        print("as top-level page")
+        smart_logger.info(f"{logger_prefix} as top-level page")
 
     response = request_request(
         "POST",
@@ -222,7 +261,7 @@ def publish_attachment(page_id, file_path):
         "type": "page",
         "body": {
             "storage": {
-                "value": attachment_html % file_name,
+                "value": (image_html if filetype.is_image(file_path) else attachment_html) % file_name,
                 "representation": "storage"
             }
         }
@@ -249,11 +288,14 @@ if __name__ == '__main__':
     with open('constants.json') as const_file:
         constants = json.load(const_file)
 
+    smart_logger = logging.getLogger()
+    attachment_html = file_html
     auth_details = (constants['username'], constants['password'])
-    db = TinyDB(constants['db'])
+    db = TinyDB(constants["db"])
     page_query = Query()
 
     parse_args()
+    init_logger()
 
     for root, sub_dirs, files in os.walk(constants['path']):
         root_name = os.path.basename(root)

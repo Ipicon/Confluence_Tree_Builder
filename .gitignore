@@ -1,2 +1,4 @@
 .idea
+files_to_move
 db.json
+*.log
