@@ -9,7 +9,7 @@ import requests
 from tinydb import TinyDB, Query
 
 file_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1\" ' \
-            'ac:macro-id=\"b7348849-e03a-4bb9-a345-955883bb48cd-ss\"><ac:parameter ac:name=\"name\">' \
+            'ac:macro-id=\"b7348849-e03a-4bb9-a345-955883bb48cd\"><ac:parameter ac:name=\"name\">' \
             '<ri:attachment ri:filename=\"%s\" /></ac:parameter><ac:parameter ' \
             'ac:name=\"height\">250</ac:parameter></ac:structured-macro></p>'
 image_html = '<p><ac:image ac:height=\"250\"><ri:attachment ri:filename=\"%s\" /></ac:image></p>'
