@@ -2,10 +2,12 @@ import getopt
 import json
 import logging
 import os
+import re
 import sys
 
 import filetype
 import requests
+import urllib3
 from tinydb import TinyDB, Query
 
 file_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1\" ' \
@@ -14,6 +16,7 @@ file_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1
             'ac:name=\"height\">250</ac:parameter></ac:structured-macro></p>'
 image_html = '<p><ac:image ac:height=\"250\"><ri:attachment ri:filename=\"%s\" /></ac:image></p>'
 link_html = '<ac:link><ri:attachment ri:filename=\"%s\" /></ac:link>'
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class CustomFormatter(logging.Formatter):
@@ -32,7 +35,7 @@ class CustomFormatter(logging.Formatter):
 
 def request_request(method, url, **additional_params):
     try:
-        response = requests.request(method, url, **additional_params)
+        response = requests.request(method, url, verify=False, **additional_params)
         response.raise_for_status()
 
         return response.json()
@@ -191,7 +194,7 @@ def get_latest_ancestor(ancestors_name):
 
 
 def publish_page(title, ancestors_name=None, root_conf=False):
-    global constants, auth_details
+    global constants, auth_details, smart_logger
 
     title = get_latest_title(title)
 
@@ -231,11 +234,39 @@ def publish_page(title, ancestors_name=None, root_conf=False):
         auth=auth_details
     )
 
-    return response['id']
+    return response['id'], title
+
+
+def add_attachment_label(attachment_id, file_name):
+    global constants, auth_details, smart_logger
+
+    url = constants['host'] + f'rest/api/content/{attachment_id}/label'
+
+    file_name = file_name.strip()
+    file_name = re.sub('[^a-zA-Z0-9. ]', '', file_name)
+    file_name = ' '.join(file_name.split())
+    file_name = re.sub('[^a-zA-Z0-9]', '_', file_name)
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    payload = [{"name": file_name}]
+
+    smart_logger.info(f"Adding label: {file_name}")
+
+    request_request(
+        "POST",
+        url,
+        json=payload,
+        headers=headers,
+        auth=auth_details
+    )
 
 
 def publish_attachment(page_id, file_path):
-    global constants, auth_details
+    global constants, auth_details, smart_logger
 
     file_name = os.path.basename(file_path)
     page_data = get_page_data(page_id)
@@ -266,6 +297,8 @@ def publish_attachment(page_id, file_path):
             }
         }
     }
+
+    smart_logger.info(f"Attaching: {file_name}")
 
     request_request(
         "POST",
@@ -314,5 +347,6 @@ if __name__ == '__main__':
                 publish_page(sub_dir, root_name)
 
         for file in files:
-            file_id = publish_page(file, root_name)
+            file_id, latest_file = publish_page(file, root_name)
             publish_attachment(file_id, os.path.join(root, file))
+            add_attachment_label(file_id, latest_file)
