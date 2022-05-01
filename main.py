@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import sys
+from collections import deque
 
 import filetype
 import requests
@@ -26,7 +27,7 @@ class CustomFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         match record.levelno:
             case logging.INFO:
-                self._style._fmt = "%(msg)s"
+                self._style._fmt = "INFO - %(asctime)s - %(msg)s"
             case logging.ERROR:
                 self._style._fmt = "ERROR - %(asctime)s - %(msg)s"
 
@@ -47,6 +48,8 @@ def request_request(method, url, **additional_params):
         smart_logger.error(err_t)
     except requests.exceptions.RequestException as err:
         smart_logger.error(err)
+    except Exception as e:
+        smart_logger.error(e)
 
 
 def init_db(start=0):
@@ -180,6 +183,7 @@ def get_latest_title(title):
     return title
 
 
+# DEPRECATED
 def get_latest_ancestor(ancestors_name):
     global db, page_query
 
@@ -193,13 +197,10 @@ def get_latest_ancestor(ancestors_name):
     return ancestors_name
 
 
-def publish_page(title, ancestors_name=None, root_conf=False):
+def publish_page(title, ancestors_name=None):
     global constants, auth_details, smart_logger
 
     title = get_latest_title(title)
-
-    if ancestors_name and not root_conf:
-        ancestors_name = get_latest_ancestor(ancestors_name)
 
     url = constants['host'] + 'rest/api/content'
 
@@ -237,24 +238,25 @@ def publish_page(title, ancestors_name=None, root_conf=False):
     return response['id'], title
 
 
-def add_attachment_label(attachment_id, file_name):
+def add_page_label(page_id, label, reformat=True):
     global constants, auth_details, smart_logger
 
-    url = constants['host'] + f'rest/api/content/{attachment_id}/label'
+    url = constants['host'] + f'rest/api/content/{page_id}/label'
 
-    file_name = file_name.strip()
-    file_name = re.sub('[^a-zA-Z0-9. ]', '', file_name)
-    file_name = ' '.join(file_name.split())
-    file_name = re.sub('[^a-zA-Z0-9]', '_', file_name)
+    if reformat:
+        label = label.strip()
+        label = re.sub('[^a-zA-Z0-9. ]', '', label)
+        label = ' '.join(label.split())
+        label = re.sub('[^a-zA-Z0-9]', '_', label)
 
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
 
-    payload = [{"name": file_name}]
+    payload = [{"name": label}]
 
-    smart_logger.info(f"Adding label: {file_name}")
+    smart_logger.info(f"Adding label: {label}")
 
     request_request(
         "POST",
@@ -263,6 +265,22 @@ def add_attachment_label(attachment_id, file_name):
         headers=headers,
         auth=auth_details
     )
+
+
+def add_parent_labels(page_id, parent_name):
+    global constants, auth_details
+
+    parent_id = get_page_id(parent_name)
+    url = constants['host'] + f'rest/api/content/{parent_id}/label'
+
+    ancestor_labels = request_request(
+        "GET",
+        url,
+        auth=auth_details
+    )['results']
+
+    for label in ancestor_labels:
+        add_page_label(page_id, label['name'], False)
 
 
 def publish_attachment(page_id, file_path):
@@ -326,27 +344,47 @@ if __name__ == '__main__':
     auth_details = (constants['username'], constants['password'])
     db = TinyDB(constants["db"])
     page_query = Query()
+    parent_labels = deque([])
 
     parse_args()
     init_logger()
 
     for root, sub_dirs, files in os.walk(constants['path']):
-        root_name = os.path.basename(root)
+        try:
+            if root == constants['path']:
+                root_name = os.path.basename(root)
 
-        if root == constants['path']:
-            if not constants['root_page_on_confluence']:
-                publish_page(root_name)
+                if not constants['root_page_on_confluence']:
+                    file_id, latest_title = publish_page(root_name)
+                    add_page_label(file_id, latest_title)
+                else:
+                    file_id, latest_title = publish_page(root_name, constants['root_page_on_confluence'])
+                    add_page_label(file_id, latest_title)
+
+                root_name = latest_title
+
             else:
-                publish_page(root_name, constants['root_page_on_confluence'], True)
+                root_name = parent_labels.popleft()
+
+            new_subs = []
 
             for sub_dir in sub_dirs:
-                publish_page(sub_dir, root_name)
+                file_id, latest_title = publish_page(sub_dir, root_name)
 
-        else:
-            for sub_dir in sub_dirs:
-                publish_page(sub_dir, root_name)
+                new_subs.append(latest_title)
+                add_parent_labels(file_id, root_name)
+                add_page_label(file_id, latest_title)
 
-        for file in files:
-            file_id, latest_file = publish_page(file, root_name)
-            publish_attachment(file_id, os.path.join(root, file))
-            add_attachment_label(file_id, latest_file)
+            parent_labels.extendleft(new_subs[::-1])
+
+            for file in files:
+                try:
+                    file_id, latest_file = publish_page(file, root_name)
+                    publish_attachment(file_id, os.path.join(root, file))
+                    add_parent_labels(file_id, root_name)
+                    add_page_label(file_id, latest_file)
+                except Exception as e:
+                    smart_logger.error(e)
+
+        except Exception as err:
+            smart_logger.error(err)
