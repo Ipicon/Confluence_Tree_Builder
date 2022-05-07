@@ -2,7 +2,6 @@ import getopt
 import json
 import logging
 import os
-import re
 import sys
 from collections import deque
 
@@ -54,9 +53,6 @@ def request_request(method, url, **additional_params):
 
 def init_db(start=0):
     global constants, auth_details, db
-
-    if constants['host'][-1] != '/':
-        constants['host'] += '/'
 
     url = constants['host'] + 'rest/api/content'
 
@@ -243,11 +239,12 @@ def add_page_label(page_id, label, reformat=True):
 
     url = constants['host'] + f'rest/api/content/{page_id}/label'
 
+    invalid_cars = ['(', '!', '#', '&', '(', ')', '*', '.', ':', ';', '<', '>', '?', '@', '[', ']', '^', ',', '-']
+
     if reformat:
         label = label.strip()
-        label = re.sub('[^a-zA-Z0-9. ]', '', label)
-        label = ' '.join(label.split())
-        label = re.sub('[^a-zA-Z0-9]', '_', label)
+        label = label.translate({ord(char): ' ' for char in invalid_cars})
+        label = '_'.join(label.split())
 
     headers = {
         "Accept": "application/json",
@@ -339,6 +336,9 @@ if __name__ == '__main__':
     with open('constants.json') as const_file:
         constants = json.load(const_file)
 
+    if constants['host'][-1] != '/':
+        constants['host'] += '/'
+
     smart_logger = logging.getLogger()
     attachment_html = file_html
     auth_details = (constants['username'], constants['password'])
@@ -379,6 +379,9 @@ if __name__ == '__main__':
 
             for file in files:
                 try:
+                    if file == 'Thumbs.db' or file.startswith('~$'):
+                        continue
+
                     file_id, latest_file = publish_page(file, root_name)
                     publish_attachment(file_id, os.path.join(root, file))
                     add_parent_labels(file_id, root_name)
