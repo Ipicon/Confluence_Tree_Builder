@@ -2,6 +2,7 @@ import getopt
 import json
 import logging
 import os
+import re
 import sys
 from collections import deque
 
@@ -156,7 +157,7 @@ def get_page_data(page_id):
 def get_latest_title(title):
     global db, page_query
 
-    query_response = db.search(page_query.title == str(title))
+    query_response = db.search(page_query.title.matches(f'^{re.escape(title)}$', flags=re.IGNORECASE))
 
     if not query_response:
         db.insert({'title': title, 'occurrences': 1})
@@ -166,13 +167,15 @@ def get_latest_title(title):
         occurrences = query_response[0]['occurrences'] + 1
 
         while not valid_title:
-            db.update({'occurrences': occurrences}, page_query.title == str(original_title))
+            db.update({'occurrences': occurrences},
+                      page_query.title.matches(f'^{re.escape(title)}$', flags=re.IGNORECASE))
 
             title = f"{original_title} - #{occurrences}"
-            query_response = db.search(page_query.title == str(title))
+            query_response = db.search(page_query.title.matches(f'^{re.escape(title)}$', flags=re.IGNORECASE))
 
             if not query_response:
                 valid_title = True
+                db.insert({'title': title, 'occurrences': occurrences})
             else:
                 occurrences += 1
 
@@ -183,7 +186,7 @@ def get_latest_title(title):
 def get_latest_ancestor(ancestors_name):
     global db, page_query
 
-    query_response = db.search(page_query.title == str(ancestors_name))
+    query_response = db.search(page_query.title.matches(f'^{re.escape(ancestors_name)}$', flags=re.IGNORECASE))
 
     occurrences = query_response[0]['occurrences']
 
