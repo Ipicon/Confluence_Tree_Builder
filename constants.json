@@ -7,5 +7,6 @@
   "root_page_on_confluence": "",
   "db": "db.json",
   "log_path": "log.log",
-  "limit": 25
+  "limit": 25,
+  "max_attachment_size": 1000
 }

@@ -1,6 +1,7 @@
 import getopt
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -30,6 +31,8 @@ class CustomFormatter(logging.Formatter):
                 self._style._fmt = "INFO - %(asctime)s - %(msg)s"
             case logging.ERROR:
                 self._style._fmt = "ERROR - %(asctime)s - %(msg)s"
+            case logging.WARNING:
+                self._style._fmt = "WARNING - %(asctime)s - %(msg)s"
 
         return super().format(record)
 
@@ -335,6 +338,11 @@ def publish_attachment(page_id, file_path):
     )
 
 
+def file_mb_size(path_to_file):
+    bytes_size = os.path.getsize(path_to_file)
+    return round(bytes_size / (math.pow(1024, 2)), 2)
+
+
 if __name__ == '__main__':
     with open('constants.json') as const_file:
         constants = json.load(const_file)
@@ -383,6 +391,13 @@ if __name__ == '__main__':
             for file in files:
                 try:
                     if file == 'Thumbs.db' or file.startswith('~$'):
+                        continue
+
+                    size_of_file = file_mb_size(os.path.join(root, file))
+
+                    if constants['max_attachment_size'] < size_of_file:
+                        smart_logger.warning(f"{file} is not published: file weights: {size_of_file} MB, "
+                                             f"when max file size is {constants['max_attachment_size']} MB")
                         continue
 
                     file_id, latest_file = publish_page(file, root_name)

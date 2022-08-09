@@ -27,3 +27,4 @@
 - `db` - name of the json file which stores the page names on the relative space
 - `log_path` - name or path to the log file
 - `limit` - the max pages to pull per query
+- `max_attachment_size` - the max file size in MB
