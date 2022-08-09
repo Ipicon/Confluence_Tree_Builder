@@ -313,7 +313,8 @@ def publish_attachment(page_id, file_path):
         "type": "page",
         "body": {
             "storage": {
-                "value": (image_html if filetype.is_image(file_path) else attachment_html) % file_name,
+                "value": (image_html if filetype.is_image(file_path) else attachment_html) % file_name.replace('&',
+                                                                                                               '&amp;'),
                 "representation": "storage"
             }
         }
