@@ -30,7 +30,7 @@ class CustomFormatter(logging.Formatter):
             case logging.INFO:
                 self._style._fmt = "INFO - %(asctime)s - %(msg)s"
             case logging.ERROR:
-                self._style._fmt = "ERROR - %(asctime)s - %(msg)s"
+                self._style._fmt = f"ERROR - %(asctime)s - %(msg)s - on line: {sys.exc_info()[-1].tb_lineno}"
             case logging.WARNING:
                 self._style._fmt = "WARNING - %(asctime)s - %(msg)s"
 
@@ -98,7 +98,7 @@ def init_logger():
 
 
 def parse_args():
-    global db, attachment_html
+    global db, attachment_html, attachment_label
 
     try:
         arguments, _ = getopt.getopt(sys.argv[1:], 'h', ['help', 'init-db', 'use-link'])
@@ -107,8 +107,9 @@ def parse_args():
             match current_argument:
                 case ('-h' | '--help'):
                     print('optional arguments:')
-                    print('  --init-db\tto initialize the database.')
-                    print('  --use-link\tto post attachments as hyperlinks.')
+                    print('  --init-db\t\tto initialize the database.')
+                    print('  --use-link\t\tto post attachments as hyperlinks.')
+                    print('  --attachment-label\t to add labels to attachments.')
 
                     sys.exit()
 
@@ -118,6 +119,9 @@ def parse_args():
 
                 case '--use-link':
                     attachment_html = link_html
+
+                case '--attachment-label':
+                    attachment_label = True
 
     except getopt.error as err:
         smart_logger.error(str(err))
@@ -345,7 +349,7 @@ def file_mb_size(path_to_file):
 
 
 if __name__ == '__main__':
-    with open('constants.json') as const_file:
+    with open('constants.json', encoding="utf8") as const_file:
         constants = json.load(const_file)
 
     if constants['host'][-1] != '/':
@@ -353,6 +357,7 @@ if __name__ == '__main__':
 
     smart_logger = logging.getLogger()
     attachment_html = file_html
+    attachment_label = False
     auth_details = (constants['username'], constants['password'])
     db = TinyDB(constants["db"])
     page_query = Query()
@@ -404,7 +409,9 @@ if __name__ == '__main__':
                     file_id, latest_file = publish_page(file, root_name)
                     publish_attachment(file_id, os.path.join(root, file))
                     add_parent_labels(file_id, root_name)
-                    add_page_label(file_id, latest_file)
+
+                    if attachment_label:
+                        add_page_label(file_id, latest_file)
                 except Exception as e:
                     smart_logger.error(e)
 
