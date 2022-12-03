@@ -1,6 +1,6 @@
 # Confluence Tree Builder
 
-## The script takes a tree of folders and publishes to the desired confluence host
+## The script takes a tree of folders and publishes to the desired confluence host 🚀
 
 ***
 ***Tested on Confluence server and Data Center 7.12***
