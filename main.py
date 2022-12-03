@@ -38,13 +38,18 @@ class CustomFormatter(logging.Formatter):
 
 
 def request_request(method, url, **additional_params):
+    response = None
+
     try:
         response = requests.request(method, url, verify=False, **additional_params)
         response.raise_for_status()
 
         return response.json()
     except requests.exceptions.HTTPError as err_h:
-        smart_logger.error(err_h)
+        if "A page with this title already exists:" in response.text:
+            raise requests.exceptions.HTTPError
+        else:
+            smart_logger.error(err_h)
     except requests.exceptions.ConnectionError as err_c:
         smart_logger.error(err_c)
     except requests.exceptions.Timeout as err_t:
@@ -114,6 +119,7 @@ def parse_args():
                     sys.exit()
 
                 case '--init-db':
+                    print("This flag is deprecated...")
                     db.truncate()
                     init_db()
 
@@ -206,7 +212,7 @@ def get_latest_ancestor(ancestors_name):
 def publish_page(title, ancestors_name=None):
     global constants, auth_details, smart_logger
 
-    title = get_latest_title(title)
+    updated_title = get_latest_title(title)
 
     url = constants['host'] + 'rest/api/content'
 
@@ -217,13 +223,13 @@ def publish_page(title, ancestors_name=None):
 
     payload = {
         "type": "page",
-        "title": title,
+        "title": updated_title,
         "space": {
             "key": constants['space_key']
         }
     }
 
-    logger_prefix = f'Publishing page: "{title}"'
+    logger_prefix = f'Publishing page: "{updated_title}"'
 
     if ancestors_name:
         payload['ancestors'] = [{'id': get_page_id(ancestors_name)}]
@@ -233,15 +239,20 @@ def publish_page(title, ancestors_name=None):
     else:
         smart_logger.info(f"{logger_prefix} as top-level page")
 
-    response = request_request(
-        "POST",
-        url,
-        json=payload,
-        headers=headers,
-        auth=auth_details
-    )
+    try:
+        response = request_request(
+            "POST",
+            url,
+            json=payload,
+            headers=headers,
+            auth=auth_details
+        )
+    except requests.exceptions.HTTPError as _:
+        smart_logger.warning(f"This title: '${updated_title}' already exist, retrying with a new one...")
+        response = {}
+        response['id'], updated_title = publish_page(title, ancestors_name)
 
-    return response['id'], title
+    return response['id'], updated_title
 
 
 def add_page_label(page_id, label, reformat=True):

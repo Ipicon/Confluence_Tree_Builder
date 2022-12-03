@@ -9,14 +9,17 @@
 ### First Run:
 
 - Run ` pip install -r requirements.txt` to install dependencies
-- Run with `--init-db` to get all the live pages on the confluence server and handle pages with the same name
+- ***DEPRECATED*** Run with `--init-db` to get all the live pages on the confluence server and handle pages with the
+  same name
+- No need for anything else 😊, once the script sees a page which already exists - it automatically retries with a
+  higher occurrences index
 
 ### Arguments:
 
 - `-h ` or `--help` to get help
-- `--init-db` to initialize the database
 - `--use-link` to post attachments as hyperlinks
 - `--attachment-label ` by default there are no labels to the attachments. use this flag to enable them.
+- ***DEPRECATED*** `--init-db` to initialize the database
 
 ### Constants
 
