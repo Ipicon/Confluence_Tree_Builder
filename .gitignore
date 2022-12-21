@@ -1,4 +1,6 @@
 .idea
 files_to_move
+test_dir
+test_folder
 db.json
 *.log

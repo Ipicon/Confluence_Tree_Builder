@@ -103,18 +103,19 @@ def init_logger():
 
 
 def parse_args():
-    global db, attachment_html, attachment_label
+    global db, attachment_html, attachment_label, full_labels
 
     try:
-        arguments, _ = getopt.getopt(sys.argv[1:], 'h', ['help', 'init-db', 'use-link'])
+        arguments, _ = getopt.getopt(sys.argv[1:], 'h',
+                                     ['help', 'init-db', 'use-link', 'full-labels', 'attachment-label'])
 
         for current_argument, _ in arguments:
             match current_argument:
                 case ('-h' | '--help'):
                     print('optional arguments:')
-                    print('  --init-db\t\tto initialize the database.')
                     print('  --use-link\t\tto post attachments as hyperlinks.')
-                    print('  --attachment-label\t to add labels to attachments.')
+                    print('  --full-labels\tto add labels with the added numeric at the end.')
+                    print('  --attachment-label\tto add labels to attachments.')
 
                     sys.exit()
 
@@ -125,6 +126,9 @@ def parse_args():
 
                 case '--use-link':
                     attachment_html = link_html
+
+                case '--full-labels':
+                    full_labels = True
 
                 case '--attachment-label':
                     attachment_label = True
@@ -255,12 +259,15 @@ def publish_page(title, ancestors_name=None):
     return response['id'], updated_title
 
 
-def add_page_label(page_id, label, reformat=True):
-    global constants, auth_details, smart_logger
+def add_page_label(page_id, label, reformat=True, original_label=""):
+    global constants, auth_details, smart_logger, full_labels
 
     url = constants['host'] + f'rest/api/content/{page_id}/label'
 
     invalid_cars = ['(', '!', '#', '&', '(', ')', '*', '.', ':', ';', '<', '>', '?', '@', '[', ']', '^', ',', '-']
+
+    if not full_labels and reformat:
+        label = original_label
 
     if reformat:
         label = label.strip()
@@ -369,6 +376,7 @@ if __name__ == '__main__':
     smart_logger = logging.getLogger()
     attachment_html = file_html
     attachment_label = False
+    full_labels = False
     auth_details = (constants['username'], constants['password'])
     db = TinyDB(constants["db"])
     page_query = Query()
@@ -384,10 +392,10 @@ if __name__ == '__main__':
 
                 if not constants['root_page_on_confluence']:
                     file_id, latest_title = publish_page(root_name)
-                    add_page_label(file_id, latest_title)
+                    add_page_label(file_id, latest_title, original_label=root_name)
                 else:
                     file_id, latest_title = publish_page(root_name, constants['root_page_on_confluence'])
-                    add_page_label(file_id, latest_title)
+                    add_page_label(file_id, latest_title, original_label=root_name)
 
                 root_name = latest_title
 
@@ -401,7 +409,7 @@ if __name__ == '__main__':
 
                 new_subs.append(latest_title)
                 add_parent_labels(file_id, root_name)
-                add_page_label(file_id, latest_title)
+                add_page_label(file_id, latest_title, original_label=sub_dir)
 
             parent_labels.extendleft(new_subs[::-1])
 
@@ -422,7 +430,7 @@ if __name__ == '__main__':
                     add_parent_labels(file_id, root_name)
 
                     if attachment_label:
-                        add_page_label(file_id, latest_file)
+                        add_page_label(file_id, latest_file, original_label=file)
                 except Exception as e:
                     smart_logger.error(e)
 

@@ -19,6 +19,7 @@
 - `-h ` or `--help` to get help
 - `--use-link` to post attachments as hyperlinks
 - `--attachment-label ` by default there are no labels to the attachments. use this flag to enable them.
+- `-full-labels` to add labels with the added numeric at the end
 - ***DEPRECATED*** `--init-db` to initialize the database
 
 ### Constants
