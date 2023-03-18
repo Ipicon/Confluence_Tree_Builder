@@ -5,6 +5,7 @@ import math
 import os
 import re
 import sys
+import time
 from collections import deque
 
 import filetype
@@ -18,6 +19,7 @@ file_html = '<p><ac:structured-macro ac:name=\"view-file\" ac:schema-version=\"1
             'ac:name=\"height\">250</ac:parameter></ac:structured-macro></p>'
 image_html = '<p><ac:image ac:height=\"250\"><ri:attachment ri:filename=\"%s\" /></ac:image></p>'
 link_html = '<ac:link><ri:attachment ri:filename=\"%s\" /></ac:link>'
+max_retries = 60 * 5  # 5 Hours
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
@@ -39,25 +41,39 @@ class CustomFormatter(logging.Formatter):
 
 def request_request(method, url, **additional_params):
     response = None
+    retries = 0
+
+    while retries < max_retries:
+        try:
+            response = requests.request(method, url, verify=False, **additional_params)
+            response.raise_for_status()
+
+            return response.json()
+        except requests.exceptions.HTTPError as err_h:
+            if "A page with this title already exists:" in response.text:
+                raise requests.exceptions.HTTPError
+            else:
+                smart_logger.error(err_h)
+        except requests.exceptions.ConnectionError as err_c:
+            smart_logger.error(err_c)
+        except requests.exceptions.Timeout as err_t:
+            smart_logger.error(err_t)
+        except requests.exceptions.RequestException as err:
+            smart_logger.error(err)
+        except Exception as e:
+            smart_logger.error(e)
+
+        retries += 1
+
+        smart_logger.info(f"Retrying request in 1 minute, attempt {retries} out of {max_retries}.")
+        time.sleep(60)
 
     try:
-        response = requests.request(method, url, verify=False, **additional_params)
-        response.raise_for_status()
-
-        return response.json()
-    except requests.exceptions.HTTPError as err_h:
-        if "A page with this title already exists:" in response.text:
-            raise requests.exceptions.HTTPError
-        else:
-            smart_logger.error(err_h)
-    except requests.exceptions.ConnectionError as err_c:
-        smart_logger.error(err_c)
-    except requests.exceptions.Timeout as err_t:
-        smart_logger.error(err_t)
-    except requests.exceptions.RequestException as err:
-        smart_logger.error(err)
-    except Exception as e:
-        smart_logger.error(e)
+        raise requests.exceptions.RequestException
+    except requests.exceptions.RequestException:
+        smart_logger.error(
+            "Max retries reached, in the next run the system will try to run from this point on. exiting...")
+        sys.exit()
 
 
 def init_db(start=0):
