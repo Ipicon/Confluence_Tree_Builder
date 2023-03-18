@@ -119,18 +119,19 @@ def init_logger():
 
 
 def parse_args():
-    global db, attachment_html, attachment_label, full_labels
+    global db, passed_table, attachment_html, attachment_label, full_labels
 
     try:
         arguments, _ = getopt.getopt(sys.argv[1:], 'h',
-                                     ['help', 'init-db', 'use-link', 'full-labels', 'attachment-label'])
+                                     ['help', 'init-db', 'use-link', 'full-labels', 'attachment-label', 'clear-cache'])
 
         for current_argument, _ in arguments:
             match current_argument:
                 case ('-h' | '--help'):
                     print('optional arguments:')
                     print('  --use-link\t\tto post attachments as hyperlinks.')
-                    print('  --full-labels\tto add labels with the added numeric at the end.')
+                    print('  --clear-cache\t\tto clear cached data and preform a clean run.')
+                    print('  --full-labels\t\tto add labels with the added numeric at the end.')
                     print('  --attachment-label\tto add labels to attachments.')
 
                     sys.exit()
@@ -139,6 +140,11 @@ def parse_args():
                     print("This flag is deprecated...")
                     db.truncate()
                     init_db()
+
+                case '--clear-cache':
+                    print("Clearing Cache...")
+                    db.truncate()
+                    passed_table.truncate()
 
                 case '--use-link':
                     attachment_html = link_html
@@ -382,6 +388,25 @@ def file_mb_size(path_to_file):
     return round(bytes_size / (math.pow(1024, 2)), 2)
 
 
+def cache_page(page_path: str, page_title: str):
+    global passed_table, passed_query, smart_logger
+
+    smart_logger.info(f"Caching page: {page_title}.")
+    passed_table.insert({'path': page_path, 'title': page_title})
+
+
+def cached_page(page_path: str):
+    global passed_table, passed_query, smart_logger
+
+    query_response = passed_table.search(passed_query.path.matches(f'^{re.escape(page_path)}$', flags=re.IGNORECASE))
+
+    if query_response:
+        smart_logger.info(f"{page_path} is cached and is already published, skipping.")
+        return query_response[0]['title']
+    else:
+        return None
+
+
 if __name__ == '__main__':
     with open('constants.json', encoding="utf8") as const_file:
         constants = json.load(const_file)
@@ -395,23 +420,34 @@ if __name__ == '__main__':
     full_labels = False
     auth_details = (constants['username'], constants['password'])
     db = TinyDB(constants["db"])
+    passed_table = db.table('passed')
     page_query = Query()
+    passed_query = Query()
     parent_labels = deque([])
 
     parse_args()
     init_logger()
 
     for root, sub_dirs, files in os.walk(constants['path']):
+        root_absolute_path = os.path.abspath(root)
+
         try:
             if root == constants['path']:
                 root_name = os.path.basename(root)
+                page_cache = cached_page(root_absolute_path)
 
-                if not constants['root_page_on_confluence']:
-                    file_id, latest_title = publish_page(root_name)
-                    add_page_label(file_id, latest_title, original_label=root_name)
+                if page_cache is None:
+                    if not constants['root_page_on_confluence']:
+                        file_id, latest_title = publish_page(root_name)
+                        add_page_label(file_id, latest_title, original_label=root_name)
+                    else:
+                        file_id, latest_title = publish_page(root_name, constants['root_page_on_confluence'])
+                        add_page_label(file_id, latest_title, original_label=root_name)
+
+                    cache_page(root_absolute_path, latest_title)
+
                 else:
-                    file_id, latest_title = publish_page(root_name, constants['root_page_on_confluence'])
-                    add_page_label(file_id, latest_title, original_label=root_name)
+                    latest_title = page_cache
 
                 root_name = latest_title
 
@@ -421,15 +457,28 @@ if __name__ == '__main__':
             new_subs = []
 
             for sub_dir in sub_dirs:
-                file_id, latest_title = publish_page(sub_dir, root_name)
+                sub_dir_path = os.path.join(root_absolute_path, sub_dir)
+                page_cache = cached_page(sub_dir_path)
+
+                if page_cache is None:
+                    file_id, latest_title = publish_page(sub_dir, root_name)
+
+                    add_parent_labels(file_id, root_name)
+                    add_page_label(file_id, latest_title, original_label=sub_dir)
+                    cache_page(sub_dir_path, latest_title)
+                else:
+                    latest_title = page_cache
 
                 new_subs.append(latest_title)
-                add_parent_labels(file_id, root_name)
-                add_page_label(file_id, latest_title, original_label=sub_dir)
 
             parent_labels.extendleft(new_subs[::-1])
 
             for file in files:
+                file_path = os.path.join(root_absolute_path, file)
+
+                if cached_page(file_path) is not None:
+                    continue
+
                 try:
                     if file == 'Thumbs.db' or file.startswith('~$'):
                         continue
@@ -447,6 +496,8 @@ if __name__ == '__main__':
 
                     if attachment_label:
                         add_page_label(file_id, latest_file, original_label=file)
+
+                    cache_page(file_path, latest_file)
                 except Exception as e:
                     smart_logger.error(e)
 
